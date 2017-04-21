@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>chatter</title>
+    <style type="text/css">
+        html, body {
+            height: 96%;
+        }
+        #container {
+            height: 100%;
+        }
+        #header {
+            height: 10%;
+        }
+        #body {
+            height: 80%;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        #footer {
+            height: 10%;
+        }
+
+        #container .row {
+            display: block;
+        }
+
+        #body .column {
+            display: inline-block;
+            height: 100%;
+            vertical-align: top;
+        }
+        #column-left {
+            width: 33%;
+            height: 100%;
+            overflow-y: scroll;
+        }
+        #column-right {
+            width: 33%;
+        }
+        #column-center {
+            width: 33%;
+            height: 100%;
+        }
+
+        #column-center .row {
+            display: block;
+        }
+
+        #messages_div {
+            height: 70%;
+            overflow-y: scroll;
+        }
+
+        #send_message_div {
+            height: 30%;
+        }
+
+    </style>
+    <script type="text/javascript">
+        var main_view_html = `
+    <div id="container">
+        <div id="header" class="row">
+            <p id="user_name"></p>
+            <form id="create_stream">
+                <input type="text" id="stream_name" size="32" />
+                <input type="submit" value="create stream" />
+            </form>
+        </div>
+        <div id="body" class="row">
+            <div id="column-left" class="column">
+                <div><p>private messages</p></div>
+                <div class="subscribed_stream_list_div">
+                    <p>my streams</p>
+                    <ul id="subscribed_stream_list">
+                    </ul>
+                </div>
+
+                <div class="stream_list_div">
+                    <p>more streams</p>
+                    <ul id="stream_list">
+                    </ul>
+                </div>
+            </div>
+
+            <div id="column-center" class="column">
+                <div id="messages_div" class="row">
+                    <p>messages</p>
+                    <ul id="message_list">
+                    </ul>
+                </div>
+                <div id="send_message_div" class="row">
+                    <p id="submit_error_message" style="color:red"></p>
+                    <form id="choose_user">
+                        <label>send to user</label>
+                        <input type="text" id="user_to_send" />
+                    </form>
+                    <form id="form1">
+                        <input type="submit" value="send" />
+                        <input type="text" id="msg1" />
+                    </form>
+
+                    <form id="choose_stream">
+                        <label>send to stream</label>
+                        <input type="text" id="stream_to_send" />
+                    </form>
+                    <form id="form2">
+                        <input type="submit" value="send" />
+                        <input type="text" id="msg2" />
+                    </form>
+
+                    <input type="submit" id="logout" value="log out" />
+                </div>
+            </div>
+
+            <div id="column-right" class="column">
+                <div class="user_list_div">
+                    <p>users</p>
+                    <ul id="user_list">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div id="footer" class="row">
+            dummy footer
+        </div>
+    </div>
+    `;
+
+        var stream_names = [];
+        var subscribed_stream_names = [];
+        var user_messages = [];
+        var stream_list;
+        var subscribed_stream_list;
+        var message_list;
+        var conn;
+
+        var streams = new Map();
+
+        var stream_messages_list;
+
+        var user_name;
+
+        function render_stream_names() {
+            stream_list.innerHTML = "";
+            stream_names.forEach(stream_name => {
+                stream_list.innerHTML += "<li>"
+                    + stream_name + "&ensp;"
+                    + "<button id='" + stream_name + "'"
+                    + " onclick='subscribe_stream_button_onclick(this.id)'"
+                    + ">join the stream</button>"
+                    + "</li>";
+            });
+        }
+
+        function render_subscribed_stream_names() {
+            subscribed_stream_list.innerHTML = "";
+            subscribed_stream_names.forEach(stream_name => {
+                var button = "<button id='" + stream_name + "'"
+                        + " onclick='open_stream_view(this.id)'" + ">" + stream_name + "</button>"
+                var unsubscribe_button = "<button id='" + "unsubscribe_" + stream_name + "'"
+                        + " onclick='unsubscribe_stream(this.id)'" + ">" + "unsubscribe" + "</button>"
+                subscribed_stream_list.innerHTML += "<li>"
+                    + button + unsubscribe_button + "</li>";
+            });
+        }
+
+        function render_user_messages() {
+            message_list.innerHTML = "";
+            user_messages.forEach(message => {
+                user_from = message.userFrom;
+                user_to = message.userTo;
+                content = message.content;
+                message_str = "from: " + user_from + "</br>" +
+                              "to: " + user_to + "</br>" +
+                              "content: " + content + "</br>" +
+                              "time: " + message.date + " " + message.time
+                message_list.innerHTML += "<li>" + message_str + "</li>";
+            });
+        }
+
+        function subscribe_stream_button_onclick(button_id) {
+            var stream_name = button_id;
+            var request = JSON.stringify([String(5), user_name, stream_name]);
+            conn.send(request);
+            return true;
+        }
+
+        function render_main_view() {
+            document.body.innerHTML = main_view_html;
+
+            user_name = document.cookie.split("chatter_user_name=")[1].split(";")[0]
+
+            document.getElementById("user_name").textContent = user_name;
+
+            stream_list = document.getElementById("stream_list");
+            subscribed_stream_list = document.getElementById("subscribed_stream_list");
+            message_list = document.getElementById("message_list");
+
+            render_subscribed_stream_names();
+            render_stream_names();
+            render_user_messages();
+
+            if (conn == null)
+                conn = new WebSocket("ws://" + document.location.host + "/ws");
+
+            msg1 = document.getElementById("msg1");
+            user_to_send = document.getElementById("user_to_send");
+            logout = document.getElementById("logout");
+            var user_list = document.getElementById("user_list");
+
+            msg2 = document.getElementById("msg2");
+            stream_to_send = document.getElementById("stream_to_send");
+
+            document.getElementById("form1").onsubmit = function() {
+                if (conn) {
+                    cur_date = new Date();
+                    year = cur_date.getYear() + 1900;
+                    month = cur_date.getMonth() + 1;
+                    day = cur_date.getDay();
+                    hour = cur_date.getHours();
+                    minute = cur_date.getMinutes();
+                    second = cur_date.getSeconds();
+
+                    date = [year, month, day].join('-')
+                    time = [hour, minute, second].join(':')
+
+                    data_to_send = JSON.stringify([String(0), user_to_send.value, msg1.value, date, time, "0"]);
+                    conn.send(data_to_send);
+                    msg1.value = '';
+
+                    document.getElementById("submit_error_message").innerHTML = '';
+                    return false;
+                }
+            }
+
+            document.getElementById("form2").onsubmit = function() {
+                if (conn) {
+                    cur_date = new Date();
+                    year = cur_date.getYear() + 1900;
+                    month = cur_date.getMonth() + 1;
+                    day = cur_date.getDay();
+                    hour = cur_date.getHours();
+                    minute = cur_date.getMinutes();
+                    second = cur_date.getSeconds();
+
+                    date = [year, month, day].join('-')
+                    time = [hour, minute, second].join(':')
+
+                    data_to_send = JSON.stringify([String(0), stream_to_send.value, msg2.value, date, time, "1"]);
+                    conn.send(data_to_send);
+                    msg2.value = '';
+
+                    document.getElementById("submit_error_message").innerHTML = '';
+                    return false;
+                }
+            }
+
+            conn.onerror = function(evt) {
+                console.log("websocket error!");
+            }
+
+            conn.onclose = function(evt) {
+                var header = document.getElementById("header").innerHTML +=
+                        "<p style='color:red'>error: websocket closed</p>";
+            }
+
+            conn.onmessage = function(evt) {
+                console.log("message is:", evt.data);
+
+                var data_parsed = JSON.parse(evt.data);
+                var reply_type = parseInt(data_parsed[0]);
+                switch (reply_type) {
+                case 0:  // server broadcasts new message
+                    data_parsed.shift();
+                    var message = data_parsed[0]
+                    if (message.userTo == user_name) {
+                        user_messages.push(message);
+                        render_user_messages();
+                    }
+                    break;
+                case 1:  // server sends newly created stream name
+                    // stream_names.push(data_parsed[1]);
+                    data_parsed.shift();
+                    data_parsed.forEach(name => stream_names.push(name));
+                    render_stream_names();
+                    break;
+                case 3: // list all users
+                    data_parsed.shift()
+                    for (var i in data_parsed) {
+                        console.log("user_name:", data_parsed[i])
+                        user_list.innerHTML += "<li>" + data_parsed[i] + "</li>";
+                    }
+                    break;
+                case 4: // list user's messages
+                    data_parsed.shift()
+                    data_parsed.forEach(message => user_messages.push(message));
+                    render_user_messages();
+                    break;
+                case 6: // list subscribed streams
+                    data_parsed.shift()
+                    data_parsed.forEach(name => subscribed_stream_names.push(name));
+                    render_subscribed_stream_names();
+
+                    for (var i = 0; i < data_parsed.length; i++) {
+                        var index = stream_names.indexOf(data_parsed[i]);
+                        if (index >= 0)
+                            stream_names.splice(index, 1);
+                    }
+                    render_stream_names();
+                    break;
+                case 8:  // [ "8", stream_name, stream_messages... ]
+                    data_parsed.shift();
+                    var stream_name = data_parsed.shift();
+                    // streams.set(stream_name, data_parsed);
+                    var messages = data_parsed;
+
+                    stream_messages_list = document.getElementById("stream_messages");
+                    stream_messages_list.innerHTML = "";
+                    // var messages = stream.get(stream_name)
+                    messages.forEach(message => {
+                        var message_str = "from: " + message["user_from"] + "</br>"
+                            + "content: " + message["message"] + "</br>"
+                            + "time: " + message["message_date"] + " " + message["message_time"];
+                        stream_messages_list.innerHTML += "<li>" + message_str + "</li>";
+                    });
+                    break;
+                case 9:  // user doesn't exist
+                    data_parsed.shift();
+                    var user_name = data_parsed[0];
+
+                    document.getElementById("submit_error_message").innerHTML =
+                        "The recipient is not valid";
+
+                case 11:  // acknowledge unsubscribing stream
+                    data_parsed.shift();
+                    var user_name = data_parsed[0];
+                    var stream_name = data_parsed[1];
+
+                    subscribed_stream_names.splice(subscribed_stream_names.indexOf(stream_name), 1);
+                    stream_names.push(stream_name);
+                    render_subscribed_stream_names();
+                    render_stream_names();
+                }
+            }
+
+            logout.onclick = function() {
+                console.log("logging out...");
+                httpRequest = new XMLHttpRequest();
+                if (!httpRequest) {
+                    console.log("FATAL: cannot create httpRequest");
+                }
+                httpRequest.onreadystatechange = function() {
+                    console.log("onreadystatechange");
+                    if (httpRequest.readyState == XMLHttpRequest.DONE) {
+                        console.log("DONE: httpRequest.status is", httpRequest.status);
+                        if (httpRequest.status == 200) {
+                            document.location.href = "/login";
+                        }
+                    }
+                }
+                httpRequest.open("GET", "logout");
+                httpRequest.send();
+                console.log("Done AJAXing");
+            }
+
+            document.getElementById("create_stream").onsubmit = function() {
+                if (conn) {
+                    stream_name = document.getElementById("stream_name").value;
+                    console.log("stream_name is", stream_name);
+                    data_to_send = JSON.stringify(["1", stream_name]);
+                    conn.send(data_to_send);
+                    return false;
+                }
+            }
+        }
+
+        function open_stream_view(stream_name) {
+            var request = JSON.stringify(["7", stream_name]);
+            conn.send(request);
+
+            document.body.innerHTML = `
+                <button onclick='render_main_view()'>home</button>
+                <p id="stream_name"></p>
+                <ul id="stream_messages">
+                </url>
+            `;
+
+            document.getElementById("stream_name").innerHTML = stream_name;
+        }
+
+        function unsubscribe_stream(id) {
+            var stream_name = id.substring(id.indexOf('_')+1);
+            var request = JSON.stringify(["11", user_name, stream_name]);
+            conn.send(request);
+        }
+
+        window.onload = function() {
+            render_main_view();
+        }
+    </script>
+</head>
+
+<body>
+</body>
+</html>
